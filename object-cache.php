@@ -1,5 +1,4 @@
 <?php
-
 /*
 Plugin Name: Memcached
 Description: Memcached backend for the WP Object Cache.
@@ -51,10 +50,10 @@ function wp_cache_flush() {
 	return $wp_object_cache->flush();
 }
 
-function wp_cache_get($key, $group = '', $force = false) {
+function wp_cache_get($key, $group = '', $force = false, &$found = null ) {
 	global $wp_object_cache;
 
-	return $wp_object_cache->get($key, $group, $force);
+	return $wp_object_cache->get($key, $group, $force, $found );
 }
 
 function wp_cache_init() {
@@ -110,15 +109,6 @@ class WP_Object_Cache {
 
 	var $cache_enabled = true;
 	var $default_expiration = 0;
-	
-	function WP_Object_Cache() {
-		$this->stats = [
-			'add' => 0,
-			'delete' => 0,
-			'get' => 0,
-			'get_multi' => 0,
-		];
-	}
 
 	function add($id, $data, $group = 'default', $expire = 0) {
 		$key = $this->key($id, $group);
@@ -225,21 +215,30 @@ class WP_Object_Cache {
 		$this->global_flush_number = $this->incr( 'flush_number', 1, 'WP_Object_Cache_global' );
 	}
 
-	function get($id, $group = 'default', $force = false) {
+	function get($id, $group = 'default', $force = false, &$found = null ) {
 		$key = $this->key($id, $group);
 		$mc =& $this->get_mc($group);
 
 		if ( isset($this->cache[$key]) && ( !$force || in_array($group, $this->no_mc_groups) ) ) {
+			$found = true;
 			if ( is_object( $this->cache[$key] ) )
- 				$value = clone $this->cache[$key];
+				$value = clone $this->cache[$key];
 			else
 				$value = $this->cache[$key];
 		} else if ( in_array($group, $this->no_mc_groups) ) {
+			$found = false;
 			$this->cache[$key] = $value = false;
 		} else {
 			$value = $mc->get($key);
-	                if ( NULL === $value )
-                        	$value = false;
+
+			if ( false === $value ) {
+				//if ( NULL === $value )
+				$value = false;
+				$found = false;
+			} else {
+				$found = true;
+			}
+
 			$this->cache[$key] = $value;
 		}
 
@@ -420,6 +419,14 @@ class WP_Object_Cache {
 
 	function __construct() {
 		global $memcached_servers;
+
+		// Fixed notice: Undefined index: delete 1 wp-content/object-cache.php:186
+		$this->stats = [
+			'add' => 0,
+			'delete' => 0,
+			'get' => 0,
+			'get_multi' => 0,
+		];
 
 		if ( isset($memcached_servers) )
 			$buckets = $memcached_servers;
